@@ -3,22 +3,40 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from bs4 import BeautifulSoup
 import requests
+from datetime import datetime, timedelta
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score
 
-def plot_history(ticker, period):
-    stock = yf.download(ticker, period=period)
+def process(ticker):
 
-    if stock.empty:
-        print("Error - No data found!")
-        return
+    end_date = datetime.today() - timedelta(days=1)
+    end_str = end_date.strftime('%Y-%m-%d')
+    df = yf.download(ticker, start="2020-01-01", end=end_str)
 
-    plt.figure(figsize=(10,5))
-    plt.plot(stock.index, stock['Close'],label=f"{ticker} Closing Price")
-    plt.xlabel("Date")
-    plt.ylabel("Stock Price (USD)")
-    plt.title(f"{ticker} Stock Price History for {period}")
-    plt.legend()
-    plt.grid()
-    plt.show()
+    df['Target'] = df['Close'].shift(-1) > df['Close'] # if true, then the stock price rose, else falsae
+    df['Target'] = df['Target'].astype(int) # true = 1 = stock price rose, false = 0 = stock price fell
+    df.dropna(inplace=True)
+
+    df['Return'] = df['Close'].pct_change() #calculate the percentage change between the previous and current closing prices
+    df['MA_7'] = df['Close'].rolling(window=7).mean()
+    df['MA_10'] = df['Close'].rolling(window=10).mean()
+    df['RollingMean_7'] = df['Close'].rolling(7).std()
+
+    features = ['Return', 'MA_7', 'MA_10', 'RollingMean_7']
+    x = df[features]
+    y = df['Target']
+
+    split_val = int(len(df) * 0.8)
+    X_train, X_test = x[:split_val], x[split_val:]
+    Y_train, Y_test = y[:split_val], y[split_val:]
+
+    clf = RandomForestClassifier()
+    clf.fit(X_train, Y_train)
+    prediction = clf.predict(X_test)
+
+    accuracy = accuracy_score(Y_test, prediction)
+    print(f'Accuracy Score: {accuracy:.2f}')
+
 
 list_of_stocks = {}
 
@@ -47,10 +65,9 @@ while True:
         continue
 
     if stock in list_of_stocks:
-        period = input("ENTER A PERIOD (1mo, 2mo, 3mo...): ")
         break
     else:
         print(f"Invalid Stock Name - Try Again.")
 
-plot_history(stock, period)
+process(stock)
 
